@@ -1,11 +1,23 @@
-var SCgObjectState = {
+const SCgObjectState = {
     Normal: 0,
     MergedWithMemory: 1,
     NewInMemory: 2,
-    FromMemory: 3
+    FromMemory: 3,
+    RemovedFromMemory: 4,
 };
 
-var ObjectId = 0;
+const SCgObjectLevel = {
+    First: 0,
+    Second: 1,
+    Third: 2,
+    Fourth: 3,
+    Fifth: 4,
+    Sixth: 5,
+    Seventh: 6,
+    Count: 7,
+};
+
+let ObjectId = 0;
 
 /**
  * Initialize sc.g-object with specified options.
@@ -19,7 +31,6 @@ var ObjectId = 0;
  * - text - text identifier of object
  */
 SCg.ModelObject = function (options) {
-
     this.need_observer_sync = true;
 
     if (options.position) {
@@ -32,23 +43,6 @@ SCg.ModelObject = function (options) {
         this.scale = options.scale;
     } else {
         this.scale = new SCg.Vector2(20.0, 20.0);
-    }
-    if (options.scaleElem) {
-        this.scaleElem = options.scaleElem;
-    } else {
-        this.scaleElem = 1; // default value, 100% natural size
-    }
-    
-    if (options.opacityElem) {
-        this.opacityElem = options.opacityElem;
-    } else {
-        this.opacityElem = 1; // default value, 100% natural size
-    }
-
-    if (options.widthEdge) {
-        this.widthEdge = options.widthEdge;
-    } else {
-        this.widthEdge = 6.5; // default value, 100% natural size
     }
 
     if (options.sc_type) {
@@ -71,19 +65,19 @@ SCg.ModelObject = function (options) {
 
     this.id = ObjectId++;
     this.edges = [];    // list of connected edges
+    this.copies = {};
     this.need_update = true;    // update flag
-    this.state = SCgObjectState.Normal;
+    this.state = SCgObjectState.FromMemory;
     this.is_selected = false;
+    this.is_highlighted = false;
     this.scene = null;
     this.bus = null;
+    this.level = null;
     this.contour = null;
-
 };
 
 SCg.ModelObject.prototype = {
-
     constructor: SCg.ModelObject
-
 };
 
 /**
@@ -114,49 +108,11 @@ SCg.ModelObject.prototype.setPosition = function (pos) {
 SCg.ModelObject.prototype.setScale = function (scale) {
     this.scale = scale;
     this.need_observer_sync = true;
-
-    this.requestUpdate();
-    this.update();
 };
 
-SCg.ModelObject.prototype.setScaleElem = function (scale) {
-    this.scaleElem = scale;
+SCg.ModelObject.prototype.setLevel = function (level) {
+    this.level = level;
     this.need_observer_sync = true;
-
-    this.requestUpdate();
-    this.update();
-};
-
-SCg.ModelObject.prototype.setOpacityElem = function (opacity) {
-    this.opacityElem = opacity;
-    this.need_observer_sync = true;
-
-    this.requestUpdate();
-    this.update();
-};
-
-SCg.ModelObject.prototype.setStrokeElem = function (stroke) {
-    this.strokeElem = stroke;
-    this.need_observer_sync = true;
-
-    this.requestUpdate();
-    this.update();
-};
-
-SCg.ModelObject.prototype.setFillElem = function (fill) {
-    this.fillElem = fill;
-    this.need_observer_sync = true;
-
-    this.requestUpdate();
-    this.update();
-};
-
-SCg.ModelObject.prototype.setWidthEdge = function (width) {
-    this.widthEdge = width;
-    this.need_observer_sync = true;
-
-    this.requestUpdate();
-    this.update();
 };
 
 /**
@@ -170,7 +126,7 @@ SCg.ModelObject.prototype.setText = function (text) {
 
 /**
  * Setup new type of object
- * @param {Integer} type New type value
+ * @param {Number} type New type value
  */
 SCg.ModelObject.prototype.setScType = function (type) {
     this.sc_type = type;
@@ -182,19 +138,16 @@ SCg.ModelObject.prototype.setScType = function (type) {
  * Notify all connected edges to sync
  */
 SCg.ModelObject.prototype.notifyEdgesUpdate = function () {
-
-    for (var i = 0; i < this.edges.length; i++) {
+    for (let i = 0; i < this.edges.length; i++) {
         this.edges[i].need_update = true;
         this.edges[i].need_observer_sync = true;
     }
-
 };
 
 /**
  * Notify connected bus to sync
  */
 SCg.ModelObject.prototype.notifyBusUpdate = function () {
-
     if (this.bus != undefined) {
         this.bus.need_update = true;
         this.bus.need_observer_sync = true;
@@ -206,7 +159,7 @@ SCg.ModelObject.prototype.notifyBusUpdate = function () {
  */
 SCg.ModelObject.prototype.requestUpdate = function () {
     this.need_update = true;
-    for (var i = 0; i < this.edges.length; ++i) {
+    for (let i = 0; i < this.edges.length; ++i) {
         this.edges[i].requestUpdate();
     }
 
@@ -266,12 +219,9 @@ SCg.ModelObject.prototype._setSelected = function (value) {
  * Remove edge from edges list
  */
 SCg.ModelObject.prototype.removeEdge = function (edge) {
-    var idx = this.edges.indexOf(edge);
+    const idx = this.edges.indexOf(edge);
 
-    if (idx < 0) {
-        SCg.error("Something wrong in edges deletion");
-        return;
-    }
+    if (idx < 0) return;
 
     this.edges.splice(idx, 1);
 };
@@ -285,25 +235,22 @@ SCg.ModelObject.prototype.removeBus = function () {
 
 /**
  * Setup new sc-addr of object
- * @param merged Flag that need to be true, when object merged with element in memory.
- * Automaticaly sets state MergedWithMemory
  */
-SCg.ModelObject.prototype.setScAddr = function (addr, merged) {
+SCg.ModelObject.prototype.setScAddr = function (addr, isCopy = false) {
+    if (isCopy) {
+        this.sc_addr = addr;
+        this.scene.objects[this.sc_addr].copies[this.id] = this;
+    } else {
+        // remove old sc-addr from map
+        if (this.sc_addr && Object.prototype.hasOwnProperty.call(this.scene.objects, this.sc_addr)) {
+            delete this.scene.objects[this.sc_addr];
+        }
+        this.sc_addr = addr;
 
-    // remove old sc-addr from map
-    if (this.sc_addr && Object.prototype.hasOwnProperty.call(this.scene.objects, this.sc_addr)) {
-        delete this.scene.objects[this.sc_addr];
+        if (this.sc_addr) this.scene.objects[this.sc_addr] = this;
     }
-    this.sc_addr = addr;
-
-    //! @todo update state
-    if (this.sc_addr)
-        this.scene.objects[this.sc_addr] = this;
 
     this.need_observer_sync = true;
-
-    if (merged == true)
-        this.setObjectState(SCgObjectState.MergedWithMemory);
 }
 
 // -------------- node ---------

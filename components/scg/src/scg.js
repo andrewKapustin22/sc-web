@@ -60,7 +60,10 @@ SCg.Editor.prototype = {
             'scg-type-arc-var-temp-neg-access': sc_type_arc_access | sc_type_var | sc_type_arc_neg |
                 sc_type_arc_temp,
             'scg-type-arc-var-temp-fuz-access': sc_type_arc_access | sc_type_var | sc_type_arc_fuz |
-                sc_type_arc_temp
+                sc_type_arc_temp,
+            'scg-type-link': sc_type_link,
+            'scg-type-link-const': sc_type_link | sc_type_const,
+            'scg-type-link-var': sc_type_link | sc_type_var,
         };
 
         this.render = new SCg.Render();
@@ -72,6 +75,7 @@ SCg.Editor.prototype = {
 
         this.render.scene = this.scene;
         this.render.sandbox = params.sandbox;
+        this.render.sandbox.scene = this.render.scene;
         this.render.init(params);
 
         this.containerId = params.containerId;
@@ -112,28 +116,41 @@ SCg.Editor.prototype = {
                 },
                 complete: function () {
                     $.ajax({
-                        url: "static/components/html/scg-types-panel-edges.html",
+                        url: "static/components/html/scg-types-panel-links.html",
                         dataType: 'html',
                         success: function (response) {
-                            self.edge_types_panel_content = response;
+                            self.link_types_panel_content = response;
                         },
                         error: function () {
                             SCgDebug.error(
-                                "Error to get edges type change panel");
+                                "Error to get links type change panel");
                         },
                         complete: function () {
                             $.ajax({
-                                url: 'static/components/html/scg-delete-panel.html',
+                                url: "static/components/html/scg-types-panel-edges.html",
                                 dataType: 'html',
                                 success: function (response) {
-                                    self.delete_panel_content = response;
+                                    self.edge_types_panel_content = response;
                                 },
                                 error: function () {
                                     SCgDebug.error(
-                                        "Error to get delete panel");
+                                        "Error to get edges type change panel");
                                 },
                                 complete: function () {
-                                    self.bindToolEvents();
+                                    $.ajax({
+                                        url: 'static/components/html/scg-delete-panel.html',
+                                        dataType: 'html',
+                                        success: function (response) {
+                                            self.delete_panel_content = response;
+                                        },
+                                        error: function () {
+                                            SCgDebug.error(
+                                                "Error to get delete panel");
+                                        },
+                                        complete: function () {
+                                            self.bindToolEvents();
+                                        }
+                                    });
                                 }
                             })
                         }
@@ -150,7 +167,7 @@ SCg.Editor.prototype = {
                 self.hideTool(self.toolUndo());
                 self.hideTool(self.toolRedo());
             }
-            if (SCWeb.core.Main.mode === SCgEditMode.SCgModeViewOnly) {
+            if (SCWeb.core.Main.editMode === SCgEditMode.SCgViewOnly) {
                 self.hideTool(self.toolSwitch());
                 self.hideTool(self.toolSelect());
                 self.hideTool(self.toolLink());
@@ -161,7 +178,7 @@ SCg.Editor.prototype = {
             if (self.resolveControls)
                 self.resolveControls(tools_container);
         });
-        this.scene.setEditMode(SCWeb.core.Main.mode);
+        this.scene.setEditMode(SCWeb.core.Main.editMode);
         this.scene.event_selection_changed = function () {
             self.onSelectionChanged();
         };
@@ -418,66 +435,31 @@ SCg.Editor.prototype = {
                 input.focus();
             }, 1);
 
-            const checkEnterValue = async (text) => {
-                let linkAddrs = await window.scClient.getLinksByContents([text]);
-                if (!linkAddrs.length) return;
-
-                let template = new sc.ScTemplate();
-                template.tripleWithRelation(
-                    [sc.ScType.NodeVar, '_node'],
-                    sc.ScType.EdgeDCommonVar,
-                    linkAddrs[0][0],
-                    sc.ScType.EdgeAccessVarPosPerm,
-                    new sc.ScAddr(window.scKeynodes['nrel_main_idtf']),
-                );
-
-                const result = await scClient.templateSearch(template);
-                if (!result.length) return;
-
-                return result[0].get("_node");
-            }
-
-            const wrapperChangeApply = async (obj, input, self) => {
-                const addrNodeEnterValue = await checkEnterValue(input[0].value);
-                if (obj.text !== input.val() && !self._selectedIdtf && !addrNodeEnterValue) {
-                    self.scene.commandManager.execute(new SCgCommandChangeIdtf(obj, input.val()));
-                }
-
-                if (!self._selectedIdtf && addrNodeEnterValue) {
-                    if (!addrNodeEnterValue) stop_modal();
-                    const [type] = await scClient.checkElements([addrNodeEnterValue]);
-                    self.scene.commandManager.execute(new SCgCommandGetNodeFromMemory(
-                        obj,
-                        type.value,
-                        input[0].value,
-                        addrNodeEnterValue.value,
-                        self.scene));
-                    stop_modal();
-                }
-
-                if (self._selectedIdtf) {
-                    searchNodeByAnyIdentifier(self._selectedIdtf).then(async (selectedAddr) => {
-                        if (!selectedAddr) stop_modal();
-
-                        const [type] = await scClient.checkElements([selectedAddr]);
-                        self.scene.commandManager.execute(new SCgCommandGetNodeFromMemory(
-                            obj,
-                            type.value,
-                            self._selectedIdtf,
-                            selectedAddr.value,
-                            self.scene));
-                        stop_modal();
+            const wrapperChangeApply = async (obj, selectedIdtf) => {
+                if (obj.text !== selectedIdtf) {
+                    searchNodeByAnyIdentifier(selectedIdtf).then(async (selectedAddr) => {
+                        if (selectedAddr) {
+                            const [type] = await scClient.checkElements([selectedAddr]);
+                            self.scene.commandManager.execute(new SCgCommandGetNodeFromMemory(
+                                obj,
+                                type.value,
+                                selectedIdtf,
+                                selectedAddr.value,
+                                self.scene)
+                            );
+                        } else {
+                            self.scene.commandManager.execute(new SCgCommandChangeIdtf(obj, selectedIdtf));
+                        }
                     });
                 }
-                else stop_modal();
             }
 
             input.keypress(function (e) {
-                if (e.keyCode == KeyCode.Enter || e.keyCode == KeyCode.Escape) {
-
-                    if (e.keyCode == KeyCode.Enter) {
+                if (e.keyCode === KeyCode.Enter || e.keyCode === KeyCode.Escape) {
+                    if (e.keyCode === KeyCode.Enter) {
                         const obj = self.scene.selected_objects[0];
-                        wrapperChangeApply(obj, input, self);
+                        if (!self._selectedIdtf) self._selectedIdtf = input.val();
+                        wrapperChangeApply(obj, self._selectedIdtf).then(stop_modal);
                     }
                     stop_modal();
                     e.preventDefault();
@@ -485,15 +467,6 @@ SCg.Editor.prototype = {
             });
 
             if (self.autocompletionVariants) {
-                const types = {
-                    local: function (text) {
-                        return "[" + text + "]";
-                    },
-                    remote: function (text) {
-                        return "<" + text + ">";
-                    }
-                };
-
                 input.typeahead({
                     minLength: 1,
                     highlight: true
@@ -508,7 +481,7 @@ SCg.Editor.prototype = {
                             return string;
                         }
                     }
-                }).bind('typeahead:selected', (event, string, data) => {
+                }).bind('typeahead:selected', (event, string, _data) => {
                     if (string?.length) {
                         self._selectedIdtf = string;
                     }
@@ -521,7 +494,8 @@ SCg.Editor.prototype = {
             // process controls
             $(container + ' #scg-change-idtf-apply').click(async function () {
                 const obj = self.scene.selected_objects[0];
-                wrapperChangeApply(obj, input, self);
+                if (!self._selectedIdtf) self._selectedIdtf = input.val();
+                wrapperChangeApply(obj, self._selectedIdtf).then(stop_modal);
             });
             $(container + ' #scg-change-idtf-cancel').click(function () {
                 stop_modal();
@@ -545,9 +519,18 @@ SCg.Editor.prototype = {
 
             var obj = self.scene.selected_objects[0];
 
+            let types;
+            if (obj instanceof SCg.ModelEdge) {
+                types = self.edge_types_panel_content;
+            } else if (obj instanceof SCg.ModelNode) {
+                types = self.node_types_panel_content;
+            } else if (obj instanceof SCg.ModelLink) {
+                types = self.link_types_panel_content;
+            }
+
             el = $(this);
             el.popover({
-                content: (obj instanceof SCg.ModelEdge) ? self.edge_types_panel_content : self.node_types_panel_content,
+                content: types,
                 container: container,
                 title: 'Change type',
                 html: true,
@@ -769,7 +752,7 @@ SCg.Editor.prototype = {
                         self.scene.addDeletedObjects(self.scene.selected_objects);
                     }
                 }
-                self.hideTool(self.toolDelete())
+                self.hideTool(self.toolDelete());
                 stop_modal();
                 select.button('toggle');
             })
@@ -866,7 +849,8 @@ SCg.Editor.prototype = {
             const currentScale = self.scene.render.scale;
             const heightRatio = containerHeight / scgHeight;
             const widthRatio = containerWidth / scgWidth;
-            const scale = currentScale * Math.min(heightRatio, widthRatio) - scaleDelta;
+            let scale = currentScale * Math.min(heightRatio, widthRatio) - scaleDelta;
+            if (scale < 0) scale = 0.01;
             const translateX = self.scene.render.d3_container[0][0].getBoundingClientRect().width * scale;
             const translateY = self.scene.render.d3_container[0][0].getBoundingClientRect().height * scale;
             
@@ -966,7 +950,7 @@ SCg.Editor.prototype = {
             return !(await self.checkCanDelete(addr));
         }
 
-        if (SCWeb.core.Main.mode === SCgEditMode.SCgModeViewOnly) {
+        if (SCWeb.core.Main.editMode === SCgEditMode.SCgViewOnly) {
             this.hideTool(this.toolChangeIdtf());
             this.hideTool(this.toolChangeType());
             this.hideTool(this.toolSetContent());
@@ -995,7 +979,9 @@ SCg.Editor.prototype = {
                 } else if (this.scene.selected_objects[0] instanceof SCg.ModelContour) {
                     this.showTool(this.toolChangeIdtf());
                 } else if (this.scene.selected_objects[0] instanceof SCg.ModelLink) {
+                    this.showTool(this.toolChangeIdtf());
                     this.showTool(this.toolSetContent());
+                    this.showTool(this.toolChangeType());
                 }
             } else if (this.scene.selected_objects.length === 1 && await checkCanEdit(this.scene.selected_objects[0].sc_addr)) {
                 if (this.scene.selected_objects[0] instanceof SCg.ModelLink) {

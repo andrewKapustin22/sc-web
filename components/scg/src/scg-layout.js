@@ -55,7 +55,7 @@ SCg.LayoutAlgorithmForceBased.prototype.start = function () {
         .nodes(this.nodes)
         .links(this.edges)
         .size(this.rect)
-        .friction(0.9)
+        .friction(0.75)
         .gravity(0.03)
         .linkDistance(function (edge) {
             const p1 = edge.source.object.getConnectionPos(edge.target.object.position, edge.object.source_dot);
@@ -230,7 +230,7 @@ SCg.LayoutManager.prototype.prepareObjects = function () {
             let source = objDict[edge.object.source.id];
             let target = objDict[edge.object.target.id];
 
-            function getEdgeObj(srcObj, isSource) {
+            function getEdgeObj(edge, srcObj, isSource) {
                 if (srcObj.type === SCgLayoutObjectType.Edge) {
                     let obj = {};
                     obj.type = SCgLayoutObjectType.DotPoint;
@@ -239,11 +239,21 @@ SCg.LayoutManager.prototype.prepareObjects = function () {
 
                     return obj;
                 }
+
+                if (!edge.contour) {
+                    if (!srcObj.contour) return srcObj;
+
+                    do {
+                        srcObj = srcObj.contour;
+                    } while (srcObj.contour);
+                    return objDict[srcObj.id];
+                }
+
                 return srcObj;
             }
 
-            edge.source = getEdgeObj(source, true);
-            edge.target = getEdgeObj(target, false);
+            edge.source = getEdgeObj(edge, source, true);
+            edge.target = getEdgeObj(edge, target, false);
 
             if (edge.source !== source)
                 appendElement(edge.source, this.nodes);

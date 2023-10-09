@@ -4,8 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.8.0-Fusion] - 24.09.2023
 ### Added
+- Add CLI argument to add hosts to CORS Allowed Origin header  
+- Duplicate target sc.g-elements on sc.g-scene for reflexive and multiple connectors
+- Change sc.g-links types
+- Change sc.g-links identifiers
+- Edit mode DistanceBasedSCgView with url argument `view_mode`
 - Debounced buffered append and remove tasks in scg-update-from-sc-translator
 - Links autoscaling with images and pdf size
 - Reconnection to sc-server
@@ -28,6 +33,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add optional buttons to delete function
 
 ### Fixed
+- Check OS type in `install_dependencies.sh`
+- Check apt command for Linux OS in `install_deps_ubuntu.sh`
+- Node classes svg elements
 - Memory leaks if elements removed from scg-scene
 - Remove listeners for scg-elements html-objects if elements were removed
 - Double click by sc-elements that aren't synchronized
@@ -49,10 +57,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add the ability to drag nodes and resize them in scg
 - Zoom scg by cursor
 - After reloading, the page URL is not replaced
+- Display interface elements only after page load
 
 ### Changed
+- SC.g-elements icons in change type tools
 - Refactor scg-update-from-sc-translator and scg-update-to-sc-translator
 - View identifiers with scn-component from sc-json
+
+### Deprecated
+- Deprecate url argument `mode` by `edit_mode`
+- Deprecate url argument `edit_mode` value `scg_just_view` by `scg_view_only`
+- Deprecate url flag `scg_structure_view_only` by `full_screen_scg`
 
 ### Removed
 - Popover view for set link content
